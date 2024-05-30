@@ -314,13 +314,25 @@ def get_user_total_posts():
     hashtag_length = 0
     res = []
 
-    for post in posts_list:
+    for post in posts:
         try:
-            if hashtag in str(post.get("text")):
+            text = str(post.get("text"))
+        except Exception as e:
+            print("啊，失效了")
+            return {"error": str(post)}, 401
+
+        try:
+            if hashtag in text:
+                print(post.get("text"))
                 hashtag_length += 1
+                print("=====")
+                print(f"这是第{hashtag_length}个")
+                print("=====")
                 res.append(post)  # Corrected here from push to append
         except Exception as e:
-            return {"error": str(post)}, 400
+            print("啊，报错了", e)
+            return {"error": e}, 402
+
 
     return {
         "res": res,
