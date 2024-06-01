@@ -1,9 +1,9 @@
-from flask import Flask, request, send_file, jsonify
-from flask_cors import CORS
-import time
-import requests
 import re
-import json
+import time
+
+import requests
+from flask import Flask, request
+from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -45,9 +45,14 @@ class Ins:
                 resp = self.session.get(url,
                                         headers=self.headers,
                                         params=params,
-                                        cookies=self.cookies)
+                                        cookies=self.cookies,
+                                        timeout=300)  # 设置超时为10秒
                 return resp.json()
-            except requests.exceptions.RequestException:
+            except requests.Timeout:
+                print("请求超时，重试中...")
+                time.sleep(2)  # 等待2秒进行重试
+            except requests.exceptions.RequestException as e:
+                print("请求异常:", e)
                 time.sleep(15)
         else:
             return None
@@ -128,38 +133,6 @@ class Ins:
                 data.get('is_verified')
             } if data else 'unknown User'
 
-    def get_userPosts(self, userName: str):
-        """
-        get all posts from the username
-        :param userName:  name
-        :return: generator
-        """
-        continuations = [{
-            'count': '12',
-        }]
-        temp = userName + '/username/'
-        while continuations:
-            continuation = continuations.pop()
-            # url will change when second request and later
-            url = f'https://www.instagram.com/api/v1/feed/user/{temp}'
-            resp = self.ajax_request(url, params=continuation)
-            # no such user
-            if not resp.get('user'):
-                yield 'checking cookie or unknown/private User: {}'.format(
-                    userName)
-            else:
-                _items = resp.get('items')
-                # simulate the mousedown
-                if resp.get('more_available'):
-                    continuations.append({
-                        'count': '12',
-                        'max_id': resp.get('next_max_id')
-                    })
-                    user = resp.get('user')
-                    temp = user.get('pk_id') if user.get(
-                        'pk_id') else user.get('pk')
-                yield from self.extract_post(_items)
-
     def get_comments(self, id):
         """
         get comments by given post id
@@ -229,13 +202,55 @@ class Ins:
                         comment.get('comment_like_count'),
                     }
 
+    def get_userPosts(self, userName: str, max_id: str = "-1"):
+        """
+        get all posts from the username
+        :param userName:  name
+        :return: generator
+        """
+        continuations = [{
+            'count': '12',
+        }]
+        if max_id != "-1":
+            continuations[0]['max_id'] = max_id  # 如果提供了max_id，则使用它
+        temp = userName + '/username/'
+        while continuations:
+            continuation = continuations.pop()
+            # url will change when second request and later
+            url = f'https://www.instagram.com/api/v1/feed/user/{temp}'
+            resp = self.ajax_request(url, params=continuation)
+            # no such user
+            if not resp.get('user'):
+                yield 'checking cookie or unknown/private User: {}'.format(
+                    userName)
+            else:
+                _items = {
+                    "posts":
+                    resp.get('items'),
+                    "max_id":
+                    resp.get('next_max_id') if resp.get('next_max_id') else "",
+                }
+                # simulate the mousedown
+                if resp.get('more_available'):
+                    continuations.append({
+                        'count': '12',
+                        'max_id': resp.get('next_max_id')
+                    })
+                    user = resp.get('user')
+                    temp = user.get('pk_id') if user.get(
+                        'pk_id') else user.get('pk')
+
+                yield from self.extract_post(_items)
+
     @staticmethod
-    def extract_post(posts):
+    def extract_post(res):
         """
         to extract a post from a list of posts
         :param posts: original instagram posts
         :return: dict of posts
         """
+        max_id = res.get('max_id')
+        posts = res.get('posts')
         for post in posts:
             caption = post.get('caption')
             item = {
@@ -257,6 +272,8 @@ class Ins:
                 caption.get('text') if caption else None,
                 'created_at':
                 caption.get('created_at') if caption else post.get('taken_at'),
+                'max_id':
+                max_id
             }
             # other type can be added by yourself
             types = post.get('media_type')
@@ -291,6 +308,8 @@ def get_user_total_posts():
     claim = data.get('claim')
     hashtag = data.get('hashtag')
     user = data.get('user')
+    max_id = data.get('max_id')
+    print("max_id: ", max_id)
 
     cookie_string = f'X-Ig-App-Id={app_id}; X-Ig-Www-Claim={claim}; {cookie_part_string}'
 
@@ -299,31 +318,33 @@ def get_user_total_posts():
         for item in cookie_string.split('; '):
             key, value = item.split('=', 1)
             cookies[key] = value
-            print(key, value)
-    except Exception as e:
+    except Exception:
         return {"error": "cookie error"}, 400
 
     INS = Ins(cookies)
     # get user posts, return is a generator
-    posts = INS.get_userPosts(user)
+
+    posts_entry2 = INS.get_userPosts(user, max_id=max_id)
+
     print(22222)
 
-    posts_list = list(posts)
-    total_length = len(posts_list)
-    print("总帖子数量为", total_length)
+    total_length = 0
     hashtag_length = 0
     res = []
+    next_max_id = ""
 
-    for post in posts:
+    count = 0
+    for post in posts_entry2:
+        total_length += 1
         try:
             text = str(post.get("text"))
-        except Exception as e:
+            print(post.get("text"))
+        except Exception:
             print("啊，失效了")
             return {"error": str(post)}, 401
 
         try:
             if hashtag in text:
-                print(post.get("text"))
                 hashtag_length += 1
                 print("=====")
                 print(f"这是第{hashtag_length}个")
@@ -333,9 +354,14 @@ def get_user_total_posts():
             print("啊，报错了", e)
             return {"error": e}, 402
 
+        count += 1
+        if count == 300:
+            next_max_id = post.get("max_id")
+            break
 
     return {
         "res": res,
+        "next_max_id": next_max_id,
         "total_length": total_length,
         "hashtag_length": hashtag_length
     }, 200

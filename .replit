@@ -1,4 +1,4 @@
-run =  ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app", "--timeout 1800"]
 entrypoint = "main.py"
 modules = ["python-3.10:v18-20230807-322e88b"]
 
@@ -8,7 +8,7 @@ hidden = [".pythonlibs"]
 channel = "stable-23_05"
 
 [deployment]
-run =  ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app", "--timeout 1800"]
 deploymentTarget = "cloudrun"
 
 [[ports]]
