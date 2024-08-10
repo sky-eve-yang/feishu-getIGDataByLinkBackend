@@ -16,7 +16,6 @@ PARAMS = r"(\'X-Ig-App-Id\':.*?),|(\'X-Ig-Www-Claim\':.*?),|(csrftoken\':.*?),"
 class Ins:
 
     def __init__(self, cookies: dict):
-        self.MAX_GROUPT_NUM = 4
         self.cookies = cookies
         self.session = requests.Session()
         self.headers = {
@@ -33,7 +32,6 @@ class Ins:
             'viewport-width': '1536',
         }
         self.get_Header_params()
-        self.next_id = ""
 
     def ajax_request(self, url: str, /, params=None):
         """
@@ -213,12 +211,11 @@ class Ins:
         continuations = [{
             'count': '12',
         }]
-        if max_id != "-1" and max_id != '':
+        if max_id != "-1":
             continuations[0]['max_id'] = max_id  # 如果提供了max_id，则使用它
         temp = userName + '/username/'
-        while self.MAX_GROUPT_NUM > 0 and continuations:
+        while continuations:
             continuation = continuations.pop()
-            self.MAX_GROUPT_NUM -= 1
             # url will change when second request and later
             url = f'https://www.instagram.com/api/v1/feed/user/{temp}'
             resp = self.ajax_request(url, params=continuation)
@@ -235,12 +232,13 @@ class Ins:
                 }
                 # simulate the mousedown
                 if resp.get('more_available'):
-                    next_id = resp.get('next_max_id')
-                    continuations.append({'count': '12', 'max_id': next_id})
+                    continuations.append({
+                        'count': '12',
+                        'max_id': resp.get('next_max_id')
+                    })
                     user = resp.get('user')
                     temp = user.get('pk_id') if user.get(
                         'pk_id') else user.get('pk')
-                    self.next_id = resp.get('next_max_id')
 
                 yield from self.extract_post(_items)
 
@@ -327,7 +325,7 @@ def get_user_total_posts():
     # get user posts, return is a generator
 
     posts_entry = INS.get_userPosts(user, max_id=max_id)
-    print()
+
     print(22222)
 
     total_length = 0
@@ -336,29 +334,25 @@ def get_user_total_posts():
     next_max_id = ""
     filtered_list = []
 
-    filtered_list = list(posts_entry)
-    total_length = len(filtered_list)
-    hashtag_length = total_length
-    next_max_id = INS.next_id
+    for post in posts_entry:
+        total_length += 1
+        print(f"这是第 {total_length} 个数据")
+        try:
+            res.append(post)
+        except Exception as e:
+            print("啊，失效了:", e)
+            return {"error": "The cookie is invalid."}, 401
 
-    # for post in posts_entry:
-    #     total_length += 1
-    #     try:
-    #         res.append(post)
-    #     except Exception as e:
-    #         return {"error": "The cookie is invalid."}, 401
-
-    #     if total_length == 48:
-    #         try:
-    #             # filtered_list = [p for p in res if hashtag in p.get("text")] # 标签过滤
-    #             filtered_list = res
-    #             hashtag_length = len(filtered_list)
-    #             print(f"hashtag_length: {hashtag_length}")
-    #             next_max_id = post.get("max_id", "")
-    #         except Exception as e:
-    #             print("啊，报错了:", e)
-    #             return {"error": str(e)}, 402
-    #         break
+        if total_length == 48:
+            try:
+                filtered_list = [p for p in res if hashtag in p.get("text")]
+                hashtag_length = len(filtered_list)
+                print(f"hashtag_length: {hashtag_length}")
+                next_max_id = post.get("max_id", "")
+            except Exception as e:
+                print("啊，报错了:", e)
+                return {"error": str(e)}, 402
+            break
 
     return {
         "res": filtered_list,
