@@ -269,7 +269,7 @@ class Ins:
                 'like_count':
                 post.get('like_count'),
                 'text':
-                caption.get('text') if caption else None,
+                caption.get('text') if caption else "",
                 'created_at':
                 caption.get('created_at') if caption else post.get('taken_at'),
                 'max_id':
@@ -324,7 +324,7 @@ def get_user_total_posts():
     INS = Ins(cookies)
     # get user posts, return is a generator
 
-    posts_entry2 = INS.get_userPosts(user, max_id=max_id)
+    posts_entry = INS.get_userPosts(user, max_id=max_id)
 
     print(22222)
 
@@ -332,35 +332,30 @@ def get_user_total_posts():
     hashtag_length = 0
     res = []
     next_max_id = ""
+    filtered_list = []
 
-    count = 0
-    for post in posts_entry2:
+    for post in posts_entry:
         total_length += 1
+        print(f"这是第 {total_length} 个数据")
         try:
-            text = str(post.get("text"))
-            print(post.get("text"))
-        except Exception:
-            print("啊，失效了")
-            return {"error": str(post)}, 401
-
-        try:
-            if hashtag in text:
-                hashtag_length += 1
-                print("=====")
-                print(f"这是第{hashtag_length}个")
-                print("=====")
-                res.append(post)  # Corrected here from push to append
+            res.append(post)
         except Exception as e:
-            print("啊，报错了", e)
-            return {"error": e}, 402
+            print("啊，失效了:", e)
+            return {"error": "The cookie is invalid."}, 401
 
-        count += 1
-        if count == 300:
-            next_max_id = post.get("max_id")
+        if total_length == 48:
+            try:
+                filtered_list = [p for p in res if hashtag in p.get("text")]
+                hashtag_length = len(filtered_list)
+                print(f"hashtag_length: {hashtag_length}")
+                next_max_id = post.get("max_id", "")
+            except Exception as e:
+                print("啊，报错了:", e)
+                return {"error": str(e)}, 402
             break
 
     return {
-        "res": res,
+        "res": filtered_list,
         "next_max_id": next_max_id,
         "total_length": total_length,
         "hashtag_length": hashtag_length
